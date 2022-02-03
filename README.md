@@ -13,6 +13,8 @@ Support asset image preview in a variety of dart code writing styles.
 [中文文档][2]
 
 ## Features
+### modify by hwh97 
+- Add custom plugin settings under Preferences - tools
 ### 1.1.0
  - You can view the asset image by click the gutter icon, or ctrl+click, or mouse hover, even you didn't generate the res.dart.
  - When rename a asset file, the related reference string will also be updated automatically.

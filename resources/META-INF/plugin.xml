@@ -102,7 +102,17 @@
     <codeInsight.lineMarkerProvider language="yaml" implementationClass="com.shenyong.flutter.psi.yaml.YamlAssetLineMarkerProvider"/>
   </extensions>
 
+  <!--  添加配置窗口-->
+  <extensions defaultExtensionNs="com.intellij">
+    <!-- applicationService 这个是插件配置文件的持久化 -->
+    <applicationService serviceImplementation="com.shenyong.flutter.service.AssetSettingService"/>
+    <applicationConfigurable parentId="tools"
+                             instance="com.shenyong.flutter.setting.AssetSettingConfigurable"
+                             id="AssetSettings"
+                             displayName="Asset Gen Setting"/>
+  </extensions>
   <actions>
+
     <!-- Add your actions here -->
     <action id="FlutterAssetsRefGenerator"
             class="com.shenyong.flutter.AssetsRefGenerator"

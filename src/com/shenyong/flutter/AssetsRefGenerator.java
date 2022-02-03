@@ -32,6 +32,7 @@ import com.intellij.openapi.ui.Messages;
 import com.shenyong.flutter.checker.AssetsChecker;
 import com.shenyong.flutter.checker.ICheck;
 import com.shenyong.flutter.checker.ProjChecker;
+import com.shenyong.flutter.service.AssetSettingService;
 
 import java.io.*;
 import java.text.Normalizer;
@@ -111,9 +112,10 @@ public class AssetsRefGenerator extends AnAction {
 
     /**
      * 遍历资源目录，生成资源声明
-     * @param assets 资源声明集合
-     * @param dir 目录
-     * @param prefix 当前目录的资源路径前缀
+     *
+     * @param assets          资源声明集合
+     * @param dir             目录
+     * @param prefix          当前目录的资源路径前缀
      * @param inMultiRatioDir 当前是否在 2.0x 3.0x 等多像素比目录下，用于判断重名资源层级
      */
     private void getAssets(List<String> assets, File dir, String prefix, boolean inMultiRatioDir) {
@@ -192,7 +194,14 @@ public class AssetsRefGenerator extends AnAction {
         if (assets.isEmpty()) {
             return;
         }
-        updatePubspec(path, assets);
+        AssetSettingService.AssetConfig config = AssetSettingService.getInstance().getState();
+        List<String> excludePaths = new ArrayList<>();
+        if (config != null && config.excludePath != null) {
+            excludePaths = config.excludePath;
+        }
+        removeExclude(assets, excludePaths);
+
+        updatePubspec(path, assets, excludePaths);
         genResDart(path, assets);
     }
 
@@ -201,8 +210,9 @@ public class AssetsRefGenerator extends AnAction {
      *
      * @param path   项目路径
      * @param assets 扫描生成的资源声明
+     * @param excludePaths 排除文件夹路径
      */
-    private void updatePubspec(String path, List<String> assets) {
+    private void updatePubspec(String path, List<String> assets, List<String> excludePaths) {
         System.out.println("Updating pubspec.yaml...");
         File pubspec = new File(path, PUBSPEC);
         if (!pubspec.exists()) {
@@ -234,7 +244,7 @@ public class AssetsRefGenerator extends AnAction {
                     } else {
                         // 资源声明结束
                         assetStart = false;
-                        removeDeleted(assets, oldRemained);
+                        removeDeleted(assets, oldRemained, excludePaths);
                         // 默认按字母顺序排序
                         assets.sort(String::compareToIgnoreCase);
                         outLines.addAll(assets);
@@ -247,7 +257,7 @@ public class AssetsRefGenerator extends AnAction {
                 if (line == null && assetStart) {
                     // 资源声明在yaml文件末尾的情况。判断asset声明未结束，但已读取到文件末尾了
                     assetStart = false;
-                    removeDeleted(assets, oldRemained);
+                    removeDeleted(assets, oldRemained, excludePaths);
                     // 默认按字母顺序排序
                     assets.sort(String::compareToIgnoreCase);
                     outLines.addAll(assets);
@@ -281,24 +291,73 @@ public class AssetsRefGenerator extends AnAction {
     }
 
     /**
-     * 去掉已删除资源的旧声明，但保留引入的其他package的资源（以”  - packages/*"形式声明的）
+     * 去掉已删除资源的旧声明，但保留引入的其他package的资源（以”  - packages/*"形式声明的）和排除文件夹的声明
      *
      * @param newAssets   扫描生成的资源声明
      * @param oldRemained 遗留的其他声明
+     * @param excludePaths 排除的文件夹路径
      */
-    private void removeDeleted(List<String> newAssets, List<String> oldRemained) {
+    private void removeDeleted(List<String> newAssets, List<String> oldRemained, List<String> excludePaths) {
         for (String line : oldRemained) {
             if (line.matches("^ {2,}- packages/.*")) {
                 newAssets.add(line);
+            } else {
+                for (String path : excludePaths) {
+                    if (line.contains(path)) {
+                        newAssets.add(line);
+                        break;
+                    }
+                }
             }
         }
+    }
+
+
+    /**
+     * 去掉已被排除声明，
+     *
+     * @param newAssets   扫描生成的资源声明
+     * @param excludePaths 排除的文件夹
+     */
+    private void removeExclude(List<String> newAssets, List<String> excludePaths) {
+        for (String path : excludePaths) {
+            newAssets.removeIf(asset -> asset.contains(path));
+        }
+    }
+
+    /**
+     * 首字母大写
+     * @param str
+     * @return result
+     */
+    private String captureName(String str) {
+        // 进行字母的ascii编码前移，效率要高于截取字符串进行转换的操作
+        char[] cs=str.toCharArray();
+        cs[0]-=32;
+        return String.valueOf(cs);
     }
 
     private static final Pattern PATTERN = Pattern.compile("packages/(?<pkgName>[a-z_]+)/.*");
 
     private void genResDart(String path, List<String> assets) {
         System.out.println("Updating res.dart...");
-        File resFile = new File(path + "/" + "lib", RES_FILE);
+        AssetSettingService.AssetConfig config = AssetSettingService.getInstance().getState();
+        File resDirectory = new File(path + "/" + "lib");
+        if (config != null && config.generatePath != null) {
+            resDirectory = new File(resDirectory.getPath() + "/" + config.generatePath);
+        }
+        if (!resDirectory.exists()) {
+            try {
+                resDirectory.mkdirs();
+            } catch (SecurityException e) {
+                e.printStackTrace();
+            }
+        }
+
+        File resFile = new File(resDirectory.getPath(), RES_FILE);
+        if (config != null && config.generateFileName != null) {
+            resFile = new File(resDirectory.getPath(), config.generateFileName + ".dart");
+        }
         if (!resFile.exists()) {
             try {
                 resFile.createNewFile();
@@ -313,10 +372,19 @@ public class AssetsRefGenerator extends AnAction {
             SimpleDateFormat sdf = new SimpleDateFormat("yyyy/MM/dd");
             writer.write("/// Generated by AssetsRefGenerator on " + sdf.format(Calendar.getInstance().getTime()));
             writer.newLine();
-            writer.write("class Res {");
+            if (config != null && config.generateFileName != null) {
+                writer.write("class "+ captureName(config.generateFileName) +" {");
+            } else {
+                writer.write("class Res {");
+            }
             writer.newLine();
             List<String> packages = new ArrayList<>();
             List<String> assetDefines = new ArrayList<>();
+            List<String> excludeDirectory = new ArrayList<>();
+            if (config != null && config.excludePath != null) {
+                excludeDirectory = config.excludePath;
+            }
+            removeExclude(assets, excludeDirectory);
             for (String out : assets) {
                 String assetPath = out.replaceAll(" {2,}- ", "").trim();
                 // 处理其他 package 的资源文件声明
