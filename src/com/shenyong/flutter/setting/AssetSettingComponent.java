@@ -33,6 +33,7 @@ public class AssetSettingComponent {
                             "输入文件夹路径", Messages.getInformationIcon());
                     if (path != null && !path.trim().isEmpty()) {
                         defaultListModel.addElement(path);
+                        jbList.setModel(defaultListModel);
                     }
                 })
                 .setEditAction(editActionButton -> {
@@ -46,6 +47,7 @@ public class AssetSettingComponent {
                 .setRemoveAction(removeActionButton -> {
                     if (!jbList.isSelectionEmpty()) {
                         defaultListModel.remove(jbList.getSelectedIndex());
+                        jbList.setModel(defaultListModel);
                     }
                 })
                 .disableUpDownActions().createPanel(), BorderLayout.CENTER);
